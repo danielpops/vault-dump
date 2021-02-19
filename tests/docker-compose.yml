@@ -1,0 +1,6 @@
+version: '2'
+services:
+  vault:
+    image: "hashicorp/vault"
+    ports:
+        - "8200"
