@@ -1,0 +1,163 @@
+from pathlib import Path
+import shutil
+import os
+import requests
+import sys
+import yaml
+
+
+yaml.SafeDumper.original_represent_str = yaml.SafeDumper.represent_str
+
+# https://stackoverflow.com/a/45004775/542442
+def fix_newline_yaml_shenanigans(dumper: yaml.SafeDumper, data: str) -> str:
+    if '\n' in data:
+        return dumper.represent_scalar(u'tag:yaml.org,2002:str', data, style='|')
+    return dumper.original_represent_str(data)
+
+yaml.add_representer(str, fix_newline_yaml_shenanigans, Dumper=yaml.SafeDumper)
+
+
+def make_request(token: str, vault_addr: str, path: str, verb: str = "GET"):
+
+    print(f"Making {verb} request to {vault_addr}/{path}")
+    response = requests.request(verb, f"{vault_addr}/{path}", verify=False, headers={"X-VAULT-TOKEN": token})
+
+    if "errors" in response.json() and "permission denied" in response.json()["errors"]:
+        raise Exception("Permission denied. Did you provide a valid Vault Token and/or do you have sufficient privileges on the vault server?")
+
+    return response
+
+def main():
+
+    config_root = "./configuration"
+    vault_token = os.getenv("VAULT_TOKEN")
+    if not vault_token:
+        raise Exception("You need to provide a vault token via the VAULT_TOKEN environment variable")
+
+    config_root_path = Path(f"{config_root}")
+    try:
+        shutil.rmtree(str(config_root_path.expanduser().absolute()))
+    except FileNotFoundError:
+        pass
+
+    vault_addr = os.getenv("VAULT_ADDR", "http://localhost:8200")
+
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    # policies
+    get_policies(config_root, vault_token, vault_addr)
+
+    # auth methods
+    get_auth_backends(config_root, vault_token, vault_addr)
+
+    # audit backends
+    get_audit_backends(config_root, vault_token, vault_addr)
+
+    # mounts (used for secrets engines)
+    get_mounts(config_root, vault_token, vault_addr)
+
+
+def get_policies(config_root, vault_token, vault_addr):
+    get_policies_response = make_request(vault_token, vault_addr, "v1/sys/policy")
+
+    policy_names = get_policies_response.json()["policies"]
+
+    for policy_name in policy_names:
+        # Built-in ones that don't need to be represented here and have no actual content
+        if policy_name in ["root"]:
+            continue
+        policy_file = Path(f"{config_root}/sys/policy/{policy_name}.hcl")
+        policy_file.parent.mkdir(parents=True, exist_ok=True)
+        get_policy_response = make_request(vault_token, vault_addr, f"v1/sys/policy/{policy_name}")
+        policy_text = get_policy_response.json()["rules"]
+        with(policy_file.open("w+")) as f:
+            f.write(policy_text)
+
+def get_auth_backends(config_root, vault_token, vault_addr):
+    get_auth_backends_response = make_request(vault_token, vault_addr, "v1/sys/auth")
+
+    auth_methods = get_auth_backends_response.json()["data"]
+    for auth_path, auth_details in auth_methods.items():
+        auth_config_file = Path(f"{config_root}/sys/auth/{auth_path[:-1]}.yaml")
+        auth_config_file.parent.mkdir(parents=True, exist_ok=True)
+        with(auth_config_file.open("w+")) as f:
+            f.write(yaml.safe_dump(auth_details))
+
+        # some auth backends have additional configuration, e.g. ldap or kubernetes
+        # Rather than itemize each one of those, just try to lookup config for each path and ignore errors
+        get_auth_extra_config_response = make_request(vault_token, vault_addr, f"v1/auth/{auth_path}config")
+        if not get_auth_extra_config_response.status_code in [403, 404]:
+            extra_auth_config_file = Path(f"{config_root}/auth/{auth_path}config.yaml")
+            extra_auth_config_file.parent.mkdir(parents=True, exist_ok=True)
+            with(extra_auth_config_file.open("w+")) as f:
+                f.write(yaml.safe_dump(get_auth_extra_config_response.json()["data"]))
+
+        get_auth_roles(config_root, vault_token, vault_addr, auth_path, auth_details["type"])
+
+
+def get_auth_roles(config_root, vault_token, vault_addr, auth_path, auth_backend_type):
+    # each auth backend may have roles defined for them
+    # enumerate them all and get their configuration details
+    list_roles_response = make_request(vault_token, vault_addr, f"v1/auth/{auth_path}roles", "LIST")
+    if not list_roles_response.status_code in [403, 404]:
+        for role_name in list_roles_response.json()["data"]["keys"]:
+            # This is necessary because of a silly inconsistency in the vault API
+            role_or_roles = "roles" if auth_backend_type in ["token"] else "role"
+            get_role_response = make_request(vault_token, vault_addr, f"v1/auth/{auth_path}{role_or_roles}/{role_name}")
+
+            role_config_file = Path(f"{config_root}/auth/{auth_path}{role_or_roles}/{role_name}.yaml")
+            role_config_file.parent.mkdir(parents=True, exist_ok=True)
+            with(role_config_file.open("w+")) as f:
+                f.write(yaml.safe_dump(get_role_response.json()["data"]))
+
+
+def get_mounts(config_root, vault_token, vault_addr):
+    get_mounts_response = make_request(vault_token, vault_addr, "v1/sys/mounts")
+
+    mounts = get_mounts_response.json()["data"]
+    for mount_path, mount_details in mounts.items():
+        mount_config_file = Path(f"{config_root}/sys/mounts/{mount_path[:-1]}.yaml")
+        mount_config_file.parent.mkdir(parents=True, exist_ok=True)
+        with(mount_config_file.open("w+")) as f:
+            f.write(yaml.safe_dump(mount_details))
+
+        # some mounts have additional configuration, e.g. ldap or kubernetes
+        # Rather than itemize each one of those, just try to lookup config for each path and ignore errors
+        get_mount_extra_config_response = make_request(vault_token, vault_addr, f"v1/mount/{mount_path}config")
+        if not get_mount_extra_config_response.status_code in [403, 404]:
+            extra_mount_config_file = Path(f"{config_root}/mount/{mount_path}config.yaml")
+            extra_mount_config_file.parent.mkdir(parents=True, exist_ok=True)
+            with(extra_mount_config_file.open("w+")) as f:
+                f.write(yaml.safe_dump(get_mount_extra_config_response.json()["data"]))
+
+        # CA secret backends might have /v1/name/config/urls and /v1/name/config/crl endpoints
+        if mount_details["type"] == "pki":
+            get_pki_urls_response = make_request(vault_token, vault_addr, f"v1/{mount_path}config/urls")
+            if get_pki_urls_response.status_code not in [403, 404]:
+                pki_urls_config_file = Path(f"{config_root}/{mount_path}config/urls.yaml")
+                pki_urls_config_file.parent.mkdir(parents=True, exist_ok=True)
+                with(pki_urls_config_file.open("w+")) as f:
+                    f.write(yaml.safe_dump(get_pki_urls_response.json()["data"]))
+
+            get_pki_crl_response = make_request(vault_token, vault_addr, f"v1/{mount_path}config/crl")
+            if get_pki_crl_response.status_code not in [403, 404]:
+                pki_crl_config_file = Path(f"{config_root}/{mount_path}config/crl.yaml")
+                pki_crl_config_file.parent.mkdir(parents=True, exist_ok=True)
+                with(pki_crl_config_file.open("w+")) as f:
+                    f.write(yaml.safe_dump(get_pki_crl_response.json()["data"]))
+
+
+def get_audit_backends(config_root, vault_token, vault_addr):
+    get_audit_backends_response = make_request(vault_token, vault_addr, "v1/sys/audit")
+
+    audit_methods = get_audit_backends_response.json()["data"]
+    for audit_path, audit_details in audit_methods.items():
+        audit_config_file = Path(f"{config_root}/sys/audit/{audit_path[:-1]}.yaml")
+        audit_config_file.parent.mkdir(parents=True, exist_ok=True)
+        with(audit_config_file.open("w+")) as f:
+            f.write(yaml.safe_dump(audit_details))
+
+
+if __name__ == "__main__":
+    main()
