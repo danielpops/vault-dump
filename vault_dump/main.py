@@ -3,8 +3,11 @@ import shutil
 import os
 import requests
 import sys
+import urllib3
 import yaml
 
+# Disable warnings for ignoring cert verification
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 yaml.SafeDumper.original_represent_str = yaml.SafeDumper.represent_str
 
@@ -42,8 +45,6 @@ def main():
 
     vault_addr = os.getenv("VAULT_ADDR", "http://localhost:8200")
 
-    import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     # policies
     get_policies(config_root, vault_token, vault_addr)
