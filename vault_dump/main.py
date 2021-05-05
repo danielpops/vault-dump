@@ -96,6 +96,23 @@ def get_auth_backends(config_root, vault_token, vault_addr):
 
         get_auth_roles(config_root, vault_token, vault_addr, auth_path, auth_details["type"])
 
+        # ldap has separate configurations for users and groups
+        if auth_path.startswith("ldap"):
+            for ldap_entity in ["groups", "users"]:
+                get_ldap_entities(config_root, vault_token, vault_addr, ldap_entity)
+
+
+def get_ldap_entities(config_root, vault_token, vault_addr, ldap_entity):
+    list_ldap_entities_response = make_request(vault_token, vault_addr, f"v1/auth/ldap/{ldap_entity}", "LIST")
+    if not list_ldap_entities_response.status_code in [403, 404]:
+        for entity_name in list_ldap_entities_response.json()["data"]["keys"]:
+            get_ldap_entity_response = make_request(vault_token, vault_addr, f"v1/auth/ldap/{ldap_entity}/{entity_name}")
+
+            ldap_entity_file = Path(f"{config_root}/auth/ldap/{ldap_entity}/{entity_name}.yaml")
+            ldap_entity_file.parent.mkdir(parents=True, exist_ok=True)
+            with(ldap_entity_file.open("w+")) as f:
+                f.write(yaml.safe_dump(get_ldap_entity_response.json()["data"]))
+
 
 def get_auth_roles(config_root, vault_token, vault_addr, auth_path, auth_backend_type):
     # each auth backend may have roles defined for them
