@@ -59,17 +59,38 @@ def test_get_auth_backends(mock_request, mock_shutil, mock_path):
     def mock_responses(*args, **kwargs):
         if args[-1].endswith("auth"):
             return mock.Mock(json=mock.Mock(return_value=
-                {"data": {"key1_no_config": {"k1": "v1", "type": "ldap"}, "key2_with_config": {"k2": "v2", "type": "token"}}}))
+                {"data": {"ldap_no_config": {"k1": "v1", "type": "ldap"}, "token_with_config": {"k2": "v2", "type": "token"}}}))
         elif args[-1].endswith("config"):
-            if "key1" in args[-1]:
+            if "ldap" in args[-1]:
                 return mock.Mock(status_code=404, json=mock.Mock(return_value={}))
-            elif "key2" in args[-1]:
+            elif "token" in args[-1]:
                 return mock.Mock(json=mock.Mock(return_value={"data":{}}))
         else:
             return mock.Mock(json=mock.Mock(return_value={}))
     mock_request.side_effect = mock_responses
-    with mock.patch("vault_dump.main.get_auth_roles"): # tested separately
+    with mock.patch("vault_dump.main.get_auth_roles"), mock.patch("vault_dump.main.get_ldap_entities"): # tested separately
         vault_dump.main.get_auth_backends(".", "token", "addr")
+
+
+@pytest.mark.parametrize("entity_type, status_code", [pytest.param("users", 200), pytest.param("groups", 200), pytest.param("other", 404)])
+def test_get_ldap_entities(mock_request, mock_shutil, mock_path, entity_type, status_code):
+    def mock_responses(*args, **kwargs):
+        if args[-1].endswith("users"):
+            return mock.Mock(status_code=status_code, json=mock.Mock(return_value=
+                {"data": {"keys": {"user1": {"k1": "v1"}, "user2": {"k2": "v2"}}}}))
+        elif "users" in args[-1]:
+            return mock.Mock(status_code=status_code, json=mock.Mock(return_value=
+                {"data": {"keys": {"user1": {"k1": "v1"}}}}))
+        elif args[-1].endswith("groups"):
+            return mock.Mock(status_code=status_code, json=mock.Mock(return_value=
+                {"data": {"keys": {"group1": {"k1": "v1"}, "group1": {"k2": "v2"}}}}))
+        elif "groups" in args[-1]:
+            return mock.Mock(status_code=status_code, json=mock.Mock(return_value=
+                {"data": {"keys": {"group1": {"k1": "v1"}}}}))
+        else:
+            return mock.Mock(status_code=status_code, json=mock.Mock(return_value={}))
+    mock_request.side_effect = mock_responses
+    vault_dump.main.get_ldap_entities(".", "token", "addr", entity_type)
 
 
 @pytest.mark.parametrize("auth_type, status_code", [pytest.param("token", 404), pytest.param("ldap", 200)])
