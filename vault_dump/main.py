@@ -130,6 +130,26 @@ def get_auth_roles(config_root, vault_token, vault_addr, auth_path, auth_backend
                 f.write(yaml.safe_dump(get_role_response.json()["data"]))
 
 
+def get_pki_roles(config_root, vault_token, vault_addr, mount_path):
+    # each pki backend may have roles defined for them
+    # enumerate them all and get their configuration details
+    list_roles_response = make_request(vault_token, vault_addr, f"v1/{mount_path}roles", "LIST")
+    if not list_roles_response.status_code in [403, 404]:
+        for role_name in list_roles_response.json()["data"]["keys"]:
+            get_role_response = make_request(vault_token, vault_addr, f"v1/{mount_path}roles/{role_name}")
+
+            # In some edge case, the actual role might not exist (or be accessible?) despite being included in the LIST command above
+            if get_role_response.status_code in [403, 404]:
+                # Just skip it if that happens
+                print(f"Could not access role pki secret backend role {role_name} for pki secret backend {mount_path}")
+                continue
+
+            role_config_file = Path(f"{config_root}/{mount_path}roles/{role_name}.yaml")
+            role_config_file.parent.mkdir(parents=True, exist_ok=True)
+            with(role_config_file.open("w+")) as f:
+                f.write(yaml.safe_dump(get_role_response.json()["data"]))
+
+
 def get_mounts(config_root, vault_token, vault_addr):
     get_mounts_response = make_request(vault_token, vault_addr, "v1/sys/mounts")
 
@@ -149,8 +169,8 @@ def get_mounts(config_root, vault_token, vault_addr):
             with(extra_mount_config_file.open("w+")) as f:
                 f.write(yaml.safe_dump(get_mount_extra_config_response.json()["data"]))
 
-        # CA secret backends might have /v1/name/config/urls and /v1/name/config/crl endpoints
         if mount_details["type"] == "pki":
+            # CA secret backends might have /v1/name/config/urls and /v1/name/config/crl endpoints
             get_pki_urls_response = make_request(vault_token, vault_addr, f"v1/{mount_path}config/urls")
             if get_pki_urls_response.status_code not in [403, 404]:
                 pki_urls_config_file = Path(f"{config_root}/{mount_path}config/urls.yaml")
@@ -164,6 +184,9 @@ def get_mounts(config_root, vault_token, vault_addr):
                 pki_crl_config_file.parent.mkdir(parents=True, exist_ok=True)
                 with(pki_crl_config_file.open("w+")) as f:
                     f.write(yaml.safe_dump(get_pki_crl_response.json()["data"]))
+
+            # They may also likely have role definitions
+            get_pki_roles(config_root, vault_token, vault_addr, mount_path)
 
 
 def get_audit_backends(config_root, vault_token, vault_addr):
