@@ -101,6 +101,19 @@ def test_get_auth_roles(mock_request, mock_shutil, mock_path, auth_type, status_
     vault_dump.main.get_auth_roles(".", "token", "addr", "auth_path", auth_type)
 
 
+@pytest.mark.parametrize("list_status_code, get_status_code", [pytest.param(403, 200), pytest.param(200, 403), pytest.param(200, 200)])
+def test_get_pki_roles(mock_request, mock_shutil, mock_path, list_status_code, get_status_code):
+    def mock_responses(*args, **kwargs):
+        if args[-1].endswith("roles"):
+            return mock.Mock(status_code=list_status_code, json=mock.Mock(return_value={"data":{"keys": ['role1', 'role2'],}}))
+        elif "roles/" in args[-1]:
+            return mock.Mock(status_code=get_status_code, json=mock.Mock(return_value={"data":{}}))
+        else:
+            return mock.Mock(json=mock.Mock(return_value={}))
+    mock_request.side_effect = mock_responses
+    vault_dump.main.get_pki_roles(".", "token", "addr", "mount_path/")
+
+
 def test_get_mounts(mock_request, mock_shutil, mock_path):
     def mock_responses(*args, **kwargs):
         if args[-1].endswith("mounts"):
@@ -120,7 +133,8 @@ def test_get_mounts(mock_request, mock_shutil, mock_path):
             else: # key3
                 return mock.Mock(json=mock.Mock(return_value={"data":{}}))
     mock_request.side_effect = mock_responses
-    vault_dump.main.get_mounts(".", "token", "addr")
+    with mock.patch("vault_dump.main.get_pki_roles"): # tested separately
+        vault_dump.main.get_mounts(".", "token", "addr")
 
 
 def test_get_audit_backends(mock_request, mock_shutil, mock_path):
