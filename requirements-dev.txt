@@ -1,4 +1,6 @@
 coverage
+flake8
 mock
 pytest
 pytest-docker
+tox
