@@ -12,10 +12,10 @@ import pytest
 def is_responsive(url):
     try:
         response = requests.get(url)
-        if response.status_code == 200:
+        if response.status_code == 200: # pragma: nobranch
             return True
     except requests.exceptions.ConnectionError as e:
-        return False
+        return False # pragma: nocover
 
 @pytest.fixture(scope="session")
 def vault_service(docker_ip, docker_services):
