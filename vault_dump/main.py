@@ -187,6 +187,7 @@ def get_mounts(config_root, vault_token, vault_addr):
 
             # They may also likely have role definitions
             get_pki_roles(config_root, vault_token, vault_addr, mount_path)
+            get_pki_certs(config_root, vault_token, vault_addr, mount_path)
 
 
 def get_audit_backends(config_root, vault_token, vault_addr):
@@ -198,6 +199,21 @@ def get_audit_backends(config_root, vault_token, vault_addr):
         audit_config_file.parent.mkdir(parents=True, exist_ok=True)
         with(audit_config_file.open("w+")) as f:
             f.write(yaml.safe_dump(audit_details))
+
+
+def get_pki_certs(config_root, vault_token, vault_addr, mount_path):
+    # This will dump out a list of certificate IDs for a given PKI backend
+    pki_certs_response = make_request(vault_token, vault_addr, f"v1/{mount_path}/certs", "LIST")
+    if pki_certs_response.status_code in [403, 404]:
+        print('Error for getting certs from', mount_path)
+        return
+    response = pki_certs_response.json()
+    certs = response.get('data', {}).get('keys', [])
+    if certs:
+        certs_file = Path(f"{config_root}/{mount_path}/certs.yaml")
+        certs_file.parent.mkdir(parents=True, exist_ok=True)
+        with(certs_file.open("w+")) as f:
+            f.write(yaml.safe_dump(certs))
 
 
 if __name__ == "__main__":
