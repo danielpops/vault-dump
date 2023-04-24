@@ -30,7 +30,7 @@ def vault_service(docker_ip, docker_services):
 
     assert requests.get(url).status_code == 200
 
-    token = re.search("Root Token: (s\.\w+)", str(output)).groups()[0]
+    token = re.search("Root Token: ([^\.]+\.\w+)", str(output)).groups()[0]
 
     return {"token": token, "url": url}
 
