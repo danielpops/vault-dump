@@ -7,7 +7,7 @@ requirements = ["requests"]
 
 setup(
     name="vault-dump",
-    version="0.0.3",
+    version="0.0.4",
     author="Daniel Popescu",
     author_email="danielpops@gmail.com",
     description="A package to dump the configuration settings for a running hashicorp vault instance",
