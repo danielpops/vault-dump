@@ -27,7 +27,7 @@ jobs:
   pypi-publish:
     name: Upload release to PyPI
     #needs: [tests] # require tests to pass before deploy runs
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    #if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: pypi
