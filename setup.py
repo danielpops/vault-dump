@@ -19,4 +19,9 @@ setup(
     classifiers=[
         "Programming Language :: Python :: 3.7",
     ],
+    entry_points = {
+        "console_scripts": [
+            "vault-dump=vault_dump.main:main"
+        ]
+    },
 )
