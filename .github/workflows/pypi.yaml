@@ -4,12 +4,15 @@ on:
   push:
     branches:
       - main
-    tags:
-      - "v*"
+  workflow_run:
+    workflows: 
+      - "Run Tests"
+    branches:
+      - main
+    types:
+      - completed
 
 jobs:
-  tests:
-    uses: ./.github/workflows/test.yaml
   debug:
     runs-on: ubuntu-latest
     steps:
@@ -23,7 +26,8 @@ jobs:
         run: echo "$GITHUB_CONTEXT"
   pypi-publish:
     name: Upload release to PyPI
-    needs: [tests] # require tests to pass before deploy runs
+    #needs: [tests] # require tests to pass before deploy runs
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: pypi
