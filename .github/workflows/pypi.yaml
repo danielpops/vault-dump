@@ -15,7 +15,9 @@ jobs:
       - name: ref
         run: echo ${{github.ref}}
       - name: all
-        run: echo ${{ toJson(github) }}
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: echo "$GITHUB_CONTEXT"
   pypi-publish:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
     name: Upload release to PyPI
