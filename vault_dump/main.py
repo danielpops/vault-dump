@@ -112,6 +112,18 @@ def get_auth_backends(config_root, vault_token, vault_addr):
                     with sts_file.open("w+") as f:
                         f.write(yaml.safe_dump(get_sts_settings.json()["data"]))
 
+        if auth_details["type"] == "userpass":
+            list_users = make_request(vault_token, vault_addr, f"v1/auth/{auth_path}users", "LIST")
+            if list_users.status_code not in [403, 404]:
+                list_users_data = list_users.json()
+                for username in list_users_data['data']['keys']:
+                    get_user_settings = make_request(vault_token, vault_addr, f"v1/auth/{auth_path}users/{username}")
+                    user_file = Path(f"{config_root}/auth/{auth_path}users/{username}.yaml")
+                    user_file.parent.mkdir(parents=True, exist_ok=True)
+                    with user_file.open("w+") as f:
+                        f.write(yaml.safe_dump(get_user_settings.json()["data"]))
+
+
 def get_ldap_entities(config_root, vault_token, vault_addr, ldap_entity):
     list_ldap_entities_response = make_request(vault_token, vault_addr, f"v1/auth/ldap/{ldap_entity}", "LIST")
     if not list_ldap_entities_response.status_code in [403, 404]:
@@ -127,7 +139,7 @@ def get_ldap_entities(config_root, vault_token, vault_addr, ldap_entity):
 def get_auth_roles(config_root, vault_token, vault_addr, auth_path, auth_backend_type):
     # each auth backend may have roles defined for them
     # enumerate them all and get their configuration details
-    role_or_roles = "role" if auth_backend_type in ["kubernetes"] else "roles"
+    role_or_roles = "role" if auth_backend_type in ["approle", "kubernetes", "oidc"] else "roles"
     list_roles_response = make_request(vault_token, vault_addr, f"v1/auth/{auth_path}{role_or_roles}", "LIST")
     if not list_roles_response.status_code in [403, 404]:
         for role_name in list_roles_response.json()["data"]["keys"]:
